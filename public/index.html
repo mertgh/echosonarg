@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Space Sonar .io</title>
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="preconnect" href="https://cdn.socket.io" crossorigin />
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js" defer></script>
+  <script src="/game.js" type="module" defer></script>
+  <meta name="color-scheme" content="dark light" />
+  <meta name="description" content="Karanlık uzayda sonar ile rakipleri tespit et!" />
+  <link rel="icon" href="data:," />
+  <style>html,body{background:#000}</style>
+  <meta http-equiv="Permissions-Policy" content="interest-cohort=()" />
+</head>
+<body>
+  <!-- Main Menu -->
+  <div id="main-menu" class="main-menu">
+    <div class="menu-stars"></div>
+    <div class="menu-content">
+      <h1 class="menu-title">
+        <span class="title-word">SPACE</span>
+        <span class="title-word">SONAR</span>
+        <span class="title-glow">.io</span>
+      </h1>
+      <p class="menu-subtitle">Karanlık Uzayda Hayatta Kal</p>
+      
+      <div class="menu-form">
+        <input type="text" id="username-input" class="name-input" placeholder="Kullanıcı Adı" maxlength="15" />
+        <input type="password" id="password-input" class="name-input" placeholder="Şifre" maxlength="20" />
+        <div id="account-status" class="account-status"></div>
+        <button id="play-button" class="play-button">
+          <span class="play-icon">▶</span> GİRİŞ YAP / KAYIT OL
+        </button>
+      </div>
+      
+      <div class="menu-buttons">
+        <button class="menu-btn" onclick="showHelp()">📖 Nasıl Oynanır</button>
+        <button class="menu-btn" onclick="toggleSound()">🔊 Ses: Açık</button>
+      </div>
+      
+      <div class="menu-stats" id="menu-stats">
+        <div class="stat-item">🏆 Toplam Puan: <span>0</span></div>
+        <div class="stat-item">💀 Toplam Kill: <span>0</span></div>
+        <div class="stat-item">🔥 En İyi Seri: <span>0</span></div>
+      </div>
+      
+      <div class="menu-footer">
+        <p>W/A/D: Hareket · Space/Mouse: Ateş · F: Sonar</p>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Background Music -->
+  <audio id="bg-music" loop>
+    <source src="/music.mp3" type="audio/mpeg">
+  </audio>
+  
+  <!-- Toast Container -->
+  <div class="toast-container" id="toast-container"></div>
+  
+  <canvas id="game"></canvas>
+  <div class="hud">
+    <div class="title">Space Sonar .io</div>
+    <div class="status"><span id="name"></span> · Ping: <span id="ping">-</span> ms · FPS: <span id="fps">-</span></div>
+    <div class="stats-total" id="total-stats">Toplam: 0 Öldürme · 0 Puan · En İyi Seri: 0</div>
+    <div class="help">W: İleri · A/D: Dön · Mouse/Space: Ateş · F: Sonar · G: Torpido · H: Füze · T/C/M: Panel Aç/Kapa</div>
+    <div class="cooldown"><div id="cdbar"></div><span id="cdtext"></span></div>
+  </div>
+  
+  <!-- Leaderboard -->
+  <div class="leaderboard">
+    <div class="lb-title">🏆 TOP 10</div>
+    <div id="leaderboard-list"></div>
+  </div>
+  
+  <!-- Kill Feed -->
+  <div class="killfeed" id="killfeed"></div>
+  
+  <!-- Skills Panel -->
+  <div class="skills-panel">
+    <div class="skill-title">⚡ YETENEKLER</div>
+    <div class="skill" id="skill-speed">
+      <span class="skill-icon">🚀</span>
+      <div class="skill-info">
+        <div class="skill-name">Hız Artışı</div>
+        <div class="skill-level" id="speed-level">Lv. 0/3</div>
+      </div>
+      <button class="skill-btn" onclick="upgradeSkill('speedBoost')">↑</button>
+    </div>
+    <div class="skill" id="skill-shield">
+      <span class="skill-icon">🛡️</span>
+      <div class="skill-info">
+        <div class="skill-name">Kalkan</div>
+        <div class="skill-level" id="shield-level">Lv. 0/3</div>
+      </div>
+      <button class="skill-btn" onclick="upgradeSkill('shield')">↑</button>
+    </div>
+    <div class="skill" id="skill-rapid">
+      <span class="skill-icon">🔫</span>
+      <div class="skill-info">
+        <div class="skill-name">Hızlı Ateş</div>
+        <div class="skill-level" id="rapid-level">Lv. 0/3</div>
+      </div>
+      <button class="skill-btn" onclick="upgradeSkill('rapidFire')">↑</button>
+    </div>
+  </div>
+  
+  <!-- Color Picker -->
+  <div class="color-picker">
+    <div class="color-title">🎨 RENK</div>
+    <div class="color-grid" id="color-grid"></div>
+  </div>
+  
+  <!-- Weapons Panel -->
+  <div class="weapons-panel">
+    <div class="weapon-title">🚀 SİLAHLAR</div>
+    <div class="upgrade-item">
+      <span class="upgrade-icon">🔫</span>
+      <div class="upgrade-info">
+        <div class="upgrade-name">Top</div>
+        <div class="upgrade-level" id="cannon-level">Lv. 1/3</div>
+      </div>
+      <button class="upgrade-btn" onclick="upgradeWeapon('cannon')">↑</button>
+    </div>
+    <div class="upgrade-item">
+      <span class="upgrade-icon">🎯</span>
+      <div class="upgrade-info">
+        <div class="upgrade-name">Torpido [G]</div>
+        <div class="upgrade-level" id="torpedo-level">Lv. 0/3 (150)</div>
+      </div>
+      <button class="upgrade-btn" onclick="upgradeWeapon('torpedo')">↑</button>
+    </div>
+    <div class="upgrade-item">
+      <span class="upgrade-icon">🚀</span>
+      <div class="upgrade-info">
+        <div class="upgrade-name">Füze [H]</div>
+        <div class="upgrade-level" id="missile-level">Lv. 0/3 (200)</div>
+      </div>
+      <button class="upgrade-btn" onclick="upgradeWeapon('missile')">↑</button>
+    </div>
+  </div>
+  
+</body>
+</html>
+
+
