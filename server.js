@@ -25,16 +25,13 @@ mongoose.connect(MONGODB_URI)
   .catch(err => console.log('MongoDB connection error:', err));
 
 const TICK_HZ = 60;
-const BROADCAST_HZ = 20;
+const BROADCAST_HZ = 30; // increased from 20 for smoother updates
 const WORLD_WIDTH = 4000;
 const WORLD_HEIGHT = 4000;
 const MAX_SPEED = 180; // px/s - slower for easier aiming
 const ACCELERATION = 250; // px/s^2 - slower acceleration
 const TURN_SPEED = Math.PI * 1.4; // rad/s - faster turning for better control
 const FRICTION = 0.5; // velocity damping per second (much more friction to stop)
-const SONAR_COOLDOWN_MS = 2500;
-const SONAR_SPEED = 700; // px/s
-const SONAR_TTL_MS = 2200;
 const COLLISION_DAMAGE = 5;
 const SHIP_RADIUS = 20;
 const MAX_HP = 100;
@@ -66,7 +63,6 @@ const MISSILE_DAMAGE = 50;
  *  vy: number,
  *  thrust: boolean,
  *  turn: number,
- *  lastSonarAt: number,
  *  lastFireAt: number,
  *  lastTorpedoAt: number,
  *  lastMissileAt: number,
@@ -89,17 +85,12 @@ const MISSILE_DAMAGE = 50;
  * }} Player
  */
 
-/** @typedef {{ id: number, x: number, y: number, createdAt: number }} SonarPulse */
-
 /** @typedef {{ id: number, x: number, y: number, vx: number, vy: number, ownerId: string, createdAt: number, startX: number, startY: number, targetId: string|null }} Bullet */
 
 /** @typedef {{ id: number, x: number, y: number, vx: number, vy: number, ownerId: string, createdAt: number, type: string }} Projectile */
 
 /** @type {Map<string, Player>} */
 const players = new Map();
-/** @type {SonarPulse[]} */
-let pulses = [];
-let nextPulseId = 1;
 /** @type {Bullet[]} */
 let bullets = [];
 let nextBulletId = 1;
@@ -142,7 +133,6 @@ function createPlayer(id, name, isBot = false, persistentData = {}) {
     vy: 0,
     thrust: false,
     turn: 0,
-    lastSonarAt: 0,
     lastFireAt: 0,
     lastTorpedoAt: 0,
     lastMissileAt: 0,
@@ -325,15 +315,6 @@ io.on('connection', socket => {
     if (!p) return;
     if (typeof data.thrust === 'boolean') p.thrust = data.thrust;
     if (typeof data.turn === 'number') p.turn = Math.max(-1, Math.min(1, data.turn));
-  });
-
-  socket.on('sonar', () => {
-    const p = players.get(socket.id);
-    if (!p) return;
-    const now = Date.now();
-    if (now - p.lastSonarAt < SONAR_COOLDOWN_MS) return;
-    p.lastSonarAt = now;
-    pulses.push({ id: nextPulseId++, x: p.x, y: p.y, createdAt: now });
   });
 
   socket.on('fire', (data) => {
@@ -571,11 +552,6 @@ setInterval(() => {
             }
           }
           
-          // use sonar when enemy nearby
-          if (dist > 400 && dist < 1000 && Math.random() > 0.5 && now - bot.lastSonarAt >= SONAR_COOLDOWN_MS) {
-            bot.lastSonarAt = now;
-            pulses.push({ id: nextPulseId++, x: bot.x, y: bot.y, createdAt: now });
-          }
         } else {
           // search mode - patrol
           bot.thrust = Math.random() > 0.4;
@@ -585,11 +561,6 @@ setInterval(() => {
             bot.turn = 0;
           }
           
-          // use sonar to find enemies
-          if (Math.random() > 0.7 && now - bot.lastSonarAt >= SONAR_COOLDOWN_MS) {
-            bot.lastSonarAt = now;
-            pulses.push({ id: nextPulseId++, x: bot.x, y: bot.y, createdAt: now });
-          }
         }
         
         // avoid walls
@@ -912,9 +883,6 @@ setInterval(() => {
     spawnBot();
   }
 
-  // expire sonar pulses
-  const cutoff = Date.now() - SONAR_TTL_MS;
-  pulses = pulses.filter(pl => pl.createdAt > cutoff);
 }, 1000 / TICK_HZ);
 
 setInterval(() => {
@@ -931,6 +899,8 @@ setInterval(() => {
       name: p.name,
       x: p.x, 
       y: p.y, 
+      vx: p.vx,
+      vy: p.vy,
       angle: p.angle, 
       hp: p.hp, 
       maxHp: p.maxHp,
@@ -947,7 +917,6 @@ setInterval(() => {
       bestStreak: p.bestStreak,
       weapons: p.weapons
     })),
-    pulses: pulses,
     bullets: bullets.map(b => ({ id: b.id, x: b.x, y: b.y })),
     projectiles: projectiles.map(p => ({ id: p.id, x: p.x, y: p.y, type: p.type })),
     leaderboard: leaderboard,
