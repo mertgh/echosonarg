@@ -35,7 +35,7 @@ const FRICTION = 0.5; // velocity damping per second (much more friction to stop
 const SONAR_COOLDOWN_MS = 2500;
 const SONAR_SPEED = 700; // px/s
 const SONAR_TTL_MS = 2200;
-const COLLISION_DAMAGE = 10;
+const COLLISION_DAMAGE = 5;
 const SHIP_RADIUS = 20;
 const MAX_HP = 100;
 const BOT_COUNT = 8;
@@ -53,8 +53,8 @@ const SHIP_COLORS = ['#ffffff', '#ff6b9d', '#c9a0dc', '#ffd700', '#00ffff', '#ff
 const STREAK_BONUSES = [0, 50, 100, 200, 400, 800]; // bonus credits for streaks
 const TORPEDO_COOLDOWN = 3000; // ms
 const MISSILE_COOLDOWN = 5000; // ms
-const TORPEDO_DAMAGE = 50;
-const MISSILE_DAMAGE = 75;
+const TORPEDO_DAMAGE = 35;
+const MISSILE_DAMAGE = 50;
 
 /** @typedef {{
  *  id: string,
@@ -782,6 +782,11 @@ setInterval(() => {
             // heal shooter on kill
             shooter.hp = Math.min(shooter.maxHp, shooter.hp + 50);
             
+            // loot system: 50% to killer, 25% stays, 25% lost
+            const lootedCredits = Math.floor(p.credits * 0.5);
+            shooter.credits += lootedCredits;
+            p.credits = Math.floor(p.credits * 0.25); // victim keeps only 25%
+            
             // streak bonuses
             const streakBonus = shooter.killStreak >= 5 ? STREAK_BONUSES[Math.min(5, shooter.killStreak - 2)] : 0;
             const baseReward = 100;
@@ -853,6 +858,15 @@ setInterval(() => {
             
             // heal shooter on kill
             shooter.hp = Math.min(shooter.maxHp, shooter.hp + 50);
+            
+            // loot system: 50% to killer, 25% kept, 25% lost
+            const totalCredits = p.credits;
+            const lootedCredits = Math.floor(totalCredits * 0.5); // 50% to killer
+            const keptCredits = Math.floor(totalCredits * 0.25); // 25% kept by victim
+            // 25% disappears (totalCredits * 0.25)
+            
+            shooter.credits += lootedCredits;
+            p.credits = keptCredits;
             
             const streakBonus = shooter.killStreak >= 5 ? STREAK_BONUSES[Math.min(5, shooter.killStreak - 2)] : 0;
             const baseReward = 150; // higher reward for advanced weapons
