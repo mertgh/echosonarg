@@ -167,6 +167,8 @@ let latency = 0;
 let lastPingAt = performance.now();
 let mouseX = 0;
 let mouseY = 0;
+let mouseDown = false;
+let spaceDown = false;
 
 // sonar cooldown (client-side UI)
 const COOLDOWN = 2500; // ms
@@ -669,22 +671,27 @@ socket.on('explosion', (data) => {
 
 // controls
 function onKey(e, down) {
-  if (e.repeat) return;
   unlockAudio(); // unlock on any key press
   const k = e.key.toLowerCase();
   keys[down ? 'add' : 'delete'](k);
-  if (k === ' ' && down) triggerFire(); // space to fire
-  if (k === 'f' && down) triggerSonar(); // F for sonar
-  if (k === 'g' && down) fireTorpedo();
-  if (k === 'h' && down) fireMissile();
-  if (down && k === '1') upgradeSkill('speedBoost');
-  if (down && k === '2') upgradeSkill('shield');
-  if (down && k === '3') upgradeSkill('rapidFire');
   
-  // UI toggles
-  if (down && k === 't') toggleLeaderboard();
-  if (down && k === 'c') toggleColorPicker();
-  if (down && k === 'm') toggleMinimap();
+  // Space for continuous fire
+  if (k === ' ') {
+    spaceDown = down;
+  }
+  
+  // One-time actions
+  if (down && !e.repeat) {
+    if (k === 'f') triggerSonar();
+    if (k === 'g') fireTorpedo();
+    if (k === 'h') fireMissile();
+    if (k === '1') upgradeSkill('speedBoost');
+    if (k === '2') upgradeSkill('shield');
+    if (k === '3') upgradeSkill('rapidFire');
+    if (k === 't') toggleLeaderboard();
+    if (k === 'c') toggleColorPicker();
+    if (k === 'm') toggleMinimap();
+  }
   
   updateInput();
 }
@@ -730,29 +737,26 @@ function fireMissile() {
   socket.emit('fireMissile', {});
 }
 
-// mouse tracking for crosshair
-canvas.addEventListener('mousemove', (e) => {
+
+// mouse down/up for continuous fire
+canvas.addEventListener('mousedown', (e) => {
+  unlockAudio();
+  mouseDown = true;
+  
   const rect = canvas.getBoundingClientRect();
   mouseX = e.clientX - rect.left;
   mouseY = e.clientY - rect.top;
 });
 
-// mouse click to aim and fire
-canvas.addEventListener('click', (e) => {
-  unlockAudio();
-  
+canvas.addEventListener('mouseup', (e) => {
+  mouseDown = false;
+});
+
+// update mouse position on move
+canvas.addEventListener('mousemove', (e) => {
   const rect = canvas.getBoundingClientRect();
   mouseX = e.clientX - rect.left;
   mouseY = e.clientY - rect.top;
-  
-  // calculate angle to mouse
-  const me = getMe();
-  const dx = mouseX - width/2;
-  const dy = mouseY - height/2;
-  const clickAngle = Math.atan2(dy, dx);
-  
-  // fire immediately at that angle
-  triggerFireAtAngle(clickAngle);
 });
 
 window.addEventListener('keydown', e => onKey(e, true));
@@ -1612,7 +1616,7 @@ function drawHPBar(me, now) {
   ctx.fillStyle = '#a6e3a1';
   ctx.fillText(`💵 ${meData.credits}`, 16, height - 58);
   ctx.fillStyle = '#89b4fa';
-  ctx.fillText(`💰 ${meData.score}`, 16, height - 36);
+  ctx.fillText(`⭐ ${meData.score}`, 16, height - 36);
   ctx.fillStyle = '#f38ba8';
   ctx.fillText(`💀 ${meData.kills}/${meData.deaths}`, 16, height - 14);
 
@@ -1779,6 +1783,18 @@ function drawCrosshair() {
 function render() {
   const me = getMe();
   const now = performance.now();
+
+  // Continuous fire when space or mouse held
+  if (spaceDown) {
+    triggerFire();
+  }
+  
+  if (mouseDown) {
+    const dx = mouseX - width/2;
+    const dy = mouseY - height/2;
+    const angle = Math.atan2(dy, dx);
+    triggerFireAtAngle(angle);
+  }
 
   // FPS counter
   frames++;
