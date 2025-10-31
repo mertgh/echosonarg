@@ -109,11 +109,10 @@ let myName = '';
 let availableColors = [];
 let streakNotifications = []; // {text, createdAt}
 
-/** @type {Map<string,{id:string,name:string,x:number,y:number,angle:number,hp:number,maxHp:number,isBot:boolean,score:number,kills:number,deaths:number,level:number,xp:number,credits:number,skills:any}>} */
+/** @type {Map<string,{id:string,name:string,x:number,y:number,angle:number,hp:number,maxHp:number,isBot:boolean,score:number,kills:number,deaths:number,level:number,xp:number,credits:number,skills:any,vx:number,vy:number}>} */
 const players = new Map();
+const playerVelocities = new Map(); // store last known velocities for interpolation
 const SKILL_COSTS = { speedBoost: [50, 100, 150], shield: [50, 100, 150], rapidFire: [50, 100, 150] };
-/** @type {{ id:number, x:number, y:number, createdAt:number }[]} */
-let pulses = [];
 /** @type {{ id:number, x:number, y:number }[]} */
 let bullets = [];
 /** @type {{ id:number, x:number, y:number, type:string }[]} */
@@ -168,11 +167,9 @@ let lastPingAt = performance.now();
 let mouseX = 0;
 let mouseY = 0;
 let mouseDown = false;
+let mouseRightDown = false;
 let spaceDown = false;
 
-// sonar cooldown (client-side UI)
-const COOLDOWN = 2500; // ms
-let lastSonarAt = 0;
 const FIRE_COOLDOWN = 350; // ms
 let lastFireAt = 0;
 
@@ -603,17 +600,17 @@ socket.on('state', s => {
         createdAt: now
       });
       
-      // hit particles
-      for (let i = 0; i < 5; i++) {
+      // reduced hit particles (3 instead of 5)
+      for (let i = 0; i < 3; i++) {
         const angle = Math.random() * Math.PI * 2;
-        const speed = 80 + Math.random() * 80;
+        const speed = 100;
         particles.push({
           x: p.x,
           y: p.y,
           vx: Math.cos(angle) * speed,
           vy: Math.sin(angle) * speed,
-          life: 0.3,
-          maxLife: 0.3,
+          life: 0.2,
+          maxLife: 0.2,
           color: '#ff4444',
           size: 2
         });
@@ -631,7 +628,6 @@ socket.on('state', s => {
   for (const p of s.players) {
     players.set(p.id, p);
   }
-  pulses = s.pulses;
   bullets = s.bullets || [];
   projectiles = s.projectiles || [];
   leaderboard = s.leaderboard || [];
@@ -650,19 +646,19 @@ socket.on('explosion', (data) => {
     size: 0
   });
   
-  // create explosion particles
-  for (let i = 0; i < 25; i++) {
-    const angle = (Math.PI * 2 * i) / 25 + Math.random() * 0.2;
-    const speed = 150 + Math.random() * 200;
+  // reduced explosion particles (10 instead of 25)
+  for (let i = 0; i < 10; i++) {
+    const angle = (Math.PI * 2 * i) / 10;
+    const speed = 150 + Math.random() * 150;
     particles.push({
       x: data.x,
       y: data.y,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
-      life: 0.6 + Math.random() * 0.4,
-      maxLife: 1,
-      color: i % 3 === 0 ? '#ff4444' : (i % 3 === 1 ? '#ff8800' : '#ffcc66'),
-      size: 3 + Math.random() * 3
+      life: 0.5,
+      maxLife: 0.5,
+      color: i % 2 === 0 ? '#ff6600' : '#ffaa00',
+      size: 3
     });
   }
   
@@ -682,7 +678,6 @@ function onKey(e, down) {
   
   // One-time actions
   if (down && !e.repeat) {
-    if (k === 'f') triggerSonar();
     if (k === 'g') fireTorpedo();
     if (k === 'h') fireMissile();
     if (k === '1') upgradeSkill('speedBoost');
@@ -721,9 +716,6 @@ window.upgradeWeapon = function(weaponName) {
   socket.emit('upgradeWeapon', weaponName);
 };
 
-window.upgradeElectronics = function(electronicsName) {
-  socket.emit('upgradeElectronics', electronicsName);
-};
 
 function fireTorpedo() {
   const meData = players.get(myId);
@@ -738,18 +730,35 @@ function fireMissile() {
 }
 
 
-// mouse down/up for continuous fire
+// mouse down/up for fire (left) and rotation (right)
 canvas.addEventListener('mousedown', (e) => {
+  e.preventDefault();
   unlockAudio();
-  mouseDown = true;
   
   const rect = canvas.getBoundingClientRect();
   mouseX = e.clientX - rect.left;
   mouseY = e.clientY - rect.top;
+  
+  if (e.button === 0) {
+    // left click - fire
+    mouseDown = true;
+  } else if (e.button === 2) {
+    // right click - rotate
+    mouseRightDown = true;
+  }
 });
 
 canvas.addEventListener('mouseup', (e) => {
-  mouseDown = false;
+  if (e.button === 0) {
+    mouseDown = false;
+  } else if (e.button === 2) {
+    mouseRightDown = false;
+  }
+});
+
+// prevent context menu on right click
+canvas.addEventListener('contextmenu', (e) => {
+  e.preventDefault();
 });
 
 // update mouse position on move
@@ -764,9 +773,28 @@ window.addEventListener('keyup', e => onKey(e, false));
 
 function updateInput() {
   const newThrust = keys.has('w') || keys.has('arrowup');
-  const left = keys.has('a') || keys.has('arrowleft') || keys.has('q');
-  const right = keys.has('d') || keys.has('arrowright') || keys.has('e');
-  const newTurn = (left ? -1 : 0) + (right ? 1 : 0);
+  const left = keys.has('a') || keys.has('arrowleft');
+  const right = keys.has('d') || keys.has('arrowright');
+  let newTurn = (left ? -1 : 0) + (right ? 1 : 0);
+  
+  // mouse right click rotation (override keyboard)
+  if (mouseRightDown) {
+    const me = getMe();
+    const dx = mouseX - width/2;
+    const dy = mouseY - height/2;
+    const targetAngle = Math.atan2(dy, dx);
+    
+    let angleDiff = targetAngle - me.angle;
+    while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+    while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+    
+    // smooth rotation towards mouse
+    if (Math.abs(angleDiff) > 0.05) {
+      newTurn = angleDiff > 0 ? 1 : -1;
+    } else {
+      newTurn = 0;
+    }
+  }
 
   // always update to ensure state is current
   thrust = newThrust;
@@ -775,17 +803,9 @@ function updateInput() {
   const t = performance.now();
   if (t - lastSent > 40) {
     const inputData = { thrust, turn };
-    // don't send targetAngle in regular input updates
     socket.emit('input', inputData);
     lastSent = t;
   }
-}
-
-function triggerSonar() {
-  const now = performance.now();
-  if (now - lastSonarAt < COOLDOWN) return;
-  lastSonarAt = now;
-  socket.emit('sonar');
 }
 
 function triggerFire() {
@@ -837,37 +857,13 @@ function drawShip(x, y, angle, options = {}) {
   ctx.rotate(angle);
   ctx.scale(scale, scale);
 
-  // Engine flames (particles)
+  // Engine flames (simplified - no particles for performance)
   if (thrusting) {
     const flicker = 1 + Math.random() * 0.3;
     const flameLength = 20 * flicker;
     
-    // emit engine particles
-    if (Math.random() > 0.7) {
-      const me = getMe();
-      const worldX = x === width/2 ? me.x : me.x + (x - width/2);
-      const worldY = y === height/2 ? me.y : me.y + (y - height/2);
-      
-      for (let i = 0; i < 3; i++) {
-        const particleAngle = angle + Math.PI + (Math.random() - 0.5) * 0.3;
-        const speed = 60 + Math.random() * 60;
-        particles.push({
-          x: worldX - Math.cos(angle) * 20,
-          y: worldY - Math.sin(angle) * 20,
-          vx: Math.cos(particleAngle) * speed,
-          vy: Math.sin(particleAngle) * speed,
-          life: 0.4,
-          maxLife: 0.4,
-          color: ['#ff6600', '#ff8800', '#ffaa00'][i % 3],
-          size: 2.5 + Math.random() * 1.5
-        });
-      }
-    }
-    
-    // Main engine flame (center)
+    // Main engine flame (center) - no shadow for performance
     ctx.fillStyle = '#ff8800';
-    ctx.shadowColor = '#ff4400';
-    ctx.shadowBlur = 15;
     ctx.beginPath();
     ctx.moveTo(-16, -5);
     ctx.lineTo(-16 - flameLength, -3);
@@ -876,12 +872,6 @@ function drawShip(x, y, angle, options = {}) {
     ctx.lineTo(-16, 5);
     ctx.closePath();
     ctx.fill();
-    ctx.shadowBlur = 0;
-  }
-
-  if (glow) {
-    ctx.shadowColor = primary;
-    ctx.shadowBlur = 25;
   }
 
   // Nose cone (red pointed tip)
@@ -981,32 +971,6 @@ function drawShip(x, y, angle, options = {}) {
   ctx.fillRect(-16, -4, 2, 3);
   ctx.fillRect(-16, 1, 2, 3);
 
-  ctx.shadowBlur = 0;
-
-  // Outline (dark for definition)
-  ctx.strokeStyle = '#2a2a2a';
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.moveTo(22, 0);
-  ctx.lineTo(14, -6);
-  ctx.lineTo(2, -6);
-  ctx.lineTo(2, -14);
-  ctx.lineTo(-8, -14);
-  ctx.lineTo(-8, -6);
-  ctx.lineTo(-10, -6);
-  ctx.lineTo(-10, -16);
-  ctx.lineTo(-6, -16);
-  ctx.lineTo(-10, 6);
-  ctx.lineTo(-10, 16);
-  ctx.lineTo(-6, 16);
-  ctx.lineTo(-10, 6);
-  ctx.lineTo(-8, 6);
-  ctx.lineTo(-8, 14);
-  ctx.lineTo(2, 14);
-  ctx.lineTo(2, 6);
-  ctx.lineTo(14, 6);
-  ctx.stroke();
-
   ctx.restore();
 }
 
@@ -1031,26 +995,6 @@ function drawDarkness(me) {
   ctx.globalCompositeOperation = 'source-over';
 }
 
-function drawSonar(me, now) {
-  // draw active rings
-  for (const p of pulses) {
-    const age = (now - p.createdAt);
-    if (age < 0 || age > 2200) continue;
-    const radius = (age / 1000) * 700; // must match server
-    const { dx, dy } = wrappedDelta(p.x, p.y, me.x, me.y);
-    const sx = width/2 + dx;
-    const sy = height/2 + dy;
-
-    ctx.beginPath();
-    ctx.arc(sx, sy, radius, 0, Math.PI * 2);
-    const alpha = 1 - (age / 2200);
-    ctx.strokeStyle = `rgba(137,180,250,${Math.max(0, Math.min(0.45, alpha))})`;
-    ctx.lineWidth = 3;
-    ctx.setLineDash([8, 10]);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-}
 
 function drawBullets(me) {
   for (const bullet of bullets) {
@@ -1077,8 +1021,8 @@ function drawBullets(me) {
 }
 
 function drawTargetLockIndicator(me) {
-  const meData = players.get(myId);
-  if (!meData || meData.electronics.targeting === 0) return;
+  // targeting system removed
+  return;
   
   // find target in front of ship
   const maxDist = 800 + (meData.electronics.targeting * 200);
@@ -1326,23 +1270,6 @@ function drawMiniMap(me, now) {
   const scaleX = sw / world.width;
   const scaleY = sh / world.height;
 
-  // sonar rings (faint)
-  for (const p of pulses) {
-    const age = (now - p.createdAt);
-    if (age < 0 || age > 2200) continue;
-    const radius = (age / 1000) * 700;
-    const mx = sx + p.x * scaleX;
-    const my = sy + p.y * scaleY;
-    ctx.beginPath();
-    ctx.arc(mx, my, radius * Math.min(scaleX, scaleY), 0, Math.PI * 2);
-    const alpha = Math.max(0, Math.min(0.35, 1 - age / 2200));
-    ctx.strokeStyle = `rgba(137,180,250,${alpha})`;
-    ctx.setLineDash([4, 8]);
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-
   // other players
   for (const p of players.values()) {
     const px = sx + p.x * scaleX;
@@ -1379,31 +1306,14 @@ function drawMiniMap(me, now) {
 }
 
 function drawReveals(me, now) {
-  // reveal other ships briefly when ring passes near them or always visible (for testing)
-  const REVEAL_THICKNESS = 280; // increased for better visibility
+  // reveal other ships if nearby (sonar removed)
   for (const other of players.values()) {
     if (other.id === myId) continue;
     
-    // check visibility via sonar
-    let visible = false;
-    for (const p of pulses) {
-      const age = (now - p.createdAt);
-      if (age < 0 || age > 2200) continue;
-      const radius = (age / 1000) * 700;
-      const { dx, dy } = wrappedDelta(other.x, other.y, p.x, p.y);
-      const dist = Math.hypot(dx, dy);
-      if (dist > radius - REVEAL_THICKNESS && dist < radius + REVEAL_THICKNESS) {
-        visible = true;
-        break;
-      }
-    }
-    
-    // also check if nearby (within vision range)
+    // check if nearby (within vision range)
     const { dx: vdx, dy: vdy } = wrappedDelta(other.x, other.y, me.x, me.y);
     const distFromMe = Math.hypot(vdx, vdy);
-    if (distFromMe < 400) visible = true; // visible in darkness range
-    
-    if (!visible) continue;
+    if (distFromMe > 600) continue; // visible range increased to 600
     
     const { dx, dy } = wrappedDelta(other.x, other.y, me.x, me.y);
     const ox = width/2 + dx;
@@ -1706,10 +1616,12 @@ function updateUpgradeUI() {
   const meData = players.get(myId);
   if (!meData) return;
   
-  // weapons
+  // weapons only (electronics removed)
   const cannonLevel = document.getElementById('cannon-level');
   const torpedoLevel = document.getElementById('torpedo-level');
   const missileLevel = document.getElementById('missile-level');
+  
+  if (!meData.weapons) return; // safety check
   
   const cannonCost = WEAPON_COSTS.cannon[meData.weapons.cannon] || 'MAX';
   const torpedoCost = WEAPON_COSTS.torpedo[meData.weapons.torpedo] || 'MAX';
@@ -1718,19 +1630,6 @@ function updateUpgradeUI() {
   if (cannonLevel) cannonLevel.textContent = `Lv. ${meData.weapons.cannon}/3 ${cannonCost !== 'MAX' ? `(${cannonCost})` : ''}`;
   if (torpedoLevel) torpedoLevel.textContent = `Lv. ${meData.weapons.torpedo}/3 ${torpedoCost !== 'MAX' ? `(${torpedoCost})` : ''}`;
   if (missileLevel) missileLevel.textContent = `Lv. ${meData.weapons.missile}/3 ${missileCost !== 'MAX' ? `(${missileCost})` : ''}`;
-  
-  // electronics
-  const radarLevel = document.getElementById('radar-level');
-  const sonarLevel = document.getElementById('sonar-level');
-  const targetingLevel = document.getElementById('targeting-level');
-  
-  const radarCost = ELECTRONICS_COSTS.radar[meData.electronics.radar] || 'MAX';
-  const sonarCost = ELECTRONICS_COSTS.sonar[meData.electronics.sonar] || 'MAX';
-  const targetingCost = ELECTRONICS_COSTS.targeting[meData.electronics.targeting] || 'MAX';
-  
-  if (radarLevel) radarLevel.textContent = `Lv. ${meData.electronics.radar}/3 ${radarCost !== 'MAX' ? `(${radarCost})` : ''}`;
-  if (sonarLevel) sonarLevel.textContent = `Lv. ${meData.electronics.sonar}/3 ${sonarCost !== 'MAX' ? `(${sonarCost})` : ''}`;
-  if (targetingLevel) targetingLevel.textContent = `Lv. ${meData.electronics.targeting}/3 ${targetingCost !== 'MAX' ? `(${targetingCost})` : ''}`;
 }
 
 function drawCrosshair() {
@@ -1781,12 +1680,12 @@ function render() {
   const me = getMe();
   const now = performance.now();
 
-  // Continuous fire when space or mouse held
-  if (spaceDown) {
+  // Continuous fire when space or mouse held (with cooldown check)
+  if (spaceDown && now - lastFireAt >= FIRE_COOLDOWN) {
     triggerFire();
   }
   
-  if (mouseDown) {
+  if (mouseDown && now - lastFireAt >= FIRE_COOLDOWN) {
     const dx = mouseX - width/2;
     const dy = mouseY - height/2;
     const angle = Math.atan2(dy, dx);
@@ -1811,8 +1710,7 @@ function render() {
   const myColor = (meData && meData.shipColor) || '#00ff00';
   drawShip(width/2, height/2, me.angle, { primary: myColor, accent: '#cfe7ff', thrusting: thrust });
 
-  // sonar rings then reveals
-  drawSonar(me, now);
+  // reveals (other ships)
   drawReveals(me, now);
   
   // target lock indicator
@@ -1845,12 +1743,6 @@ function render() {
   
   // crosshair
   drawCrosshair();
-
-  // cooldown UI
-  const cdLeft = Math.max(0, COOLDOWN - (now - lastSonarAt));
-  const ratio = 1 - (cdLeft / COOLDOWN);
-  cdBar.style.width = `${Math.round(ratio * 100)}%`;
-  cdText.textContent = cdLeft > 0 ? `${Math.ceil(cdLeft/100)/10}s` : '';
 
   requestAnimationFrame(render);
 }
