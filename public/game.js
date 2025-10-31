@@ -825,7 +825,7 @@ let lastFpsAt = performance.now();
 let frames = 0;
 function drawShip(x, y, angle, options = {}) {
   const {
-    primary = '#dce7ff',
+    primary = '#00ff00', // lime green default
     accent = '#8ec5ff',
     scale = 1,
     thrusting = false,
@@ -837,10 +837,10 @@ function drawShip(x, y, angle, options = {}) {
   ctx.rotate(angle);
   ctx.scale(scale, scale);
 
-  // Engine thrust flames with particles
+  // Engine flames (particles)
   if (thrusting) {
     const flicker = 1 + Math.random() * 0.3;
-    const length = 24 * flicker;
+    const flameLength = 20 * flicker;
     
     // emit engine particles
     if (Math.random() > 0.7) {
@@ -848,166 +848,163 @@ function drawShip(x, y, angle, options = {}) {
       const worldX = x === width/2 ? me.x : me.x + (x - width/2);
       const worldY = y === height/2 ? me.y : me.y + (y - height/2);
       
-      for (let i = 0; i < 2; i++) {
-        const particleAngle = angle + Math.PI + (Math.random() - 0.5) * 0.4;
-        const speed = 50 + Math.random() * 50;
+      for (let i = 0; i < 3; i++) {
+        const particleAngle = angle + Math.PI + (Math.random() - 0.5) * 0.3;
+        const speed = 60 + Math.random() * 60;
         particles.push({
-          x: worldX - Math.cos(angle) * 18,
-          y: worldY - Math.sin(angle) * 18 + (i === 0 ? -6 : 6),
+          x: worldX - Math.cos(angle) * 20,
+          y: worldY - Math.sin(angle) * 20,
           vx: Math.cos(particleAngle) * speed,
           vy: Math.sin(particleAngle) * speed,
-          life: 0.5,
-          maxLife: 0.5,
-          color: Math.random() > 0.5 ? '#ff8800' : '#ffcc66',
-          size: 2 + Math.random() * 2
+          life: 0.4,
+          maxLife: 0.4,
+          color: ['#ff6600', '#ff8800', '#ffaa00'][i % 3],
+          size: 2.5 + Math.random() * 1.5
         });
       }
     }
     
-    // Left engine flame
-    ctx.fillStyle = '#ffcc66';
-    ctx.shadowColor = '#ff8800';
+    // Main engine flame (center)
+    ctx.fillStyle = '#ff8800';
+    ctx.shadowColor = '#ff4400';
     ctx.shadowBlur = 15;
     ctx.beginPath();
-    ctx.moveTo(-14, -6);
-    ctx.lineTo(-14 - length, -8);
-    ctx.lineTo(-14 - length * 0.4, -6);
-    ctx.lineTo(-14 - length, -4);
-    ctx.closePath();
-    ctx.fill();
-    
-    // Right engine flame
-    ctx.fillStyle = '#ffcc66';
-    ctx.beginPath();
-    ctx.moveTo(-14, 6);
-    ctx.lineTo(-14 - length, 8);
-    ctx.lineTo(-14 - length * 0.4, 6);
-    ctx.lineTo(-14 - length, 4);
+    ctx.moveTo(-16, -5);
+    ctx.lineTo(-16 - flameLength, -3);
+    ctx.lineTo(-16 - flameLength * 0.5, 0);
+    ctx.lineTo(-16 - flameLength, 3);
+    ctx.lineTo(-16, 5);
     ctx.closePath();
     ctx.fill();
     ctx.shadowBlur = 0;
   }
 
   if (glow) {
-    ctx.shadowColor = '#aaccff';
-    ctx.shadowBlur = 30;
+    ctx.shadowColor = primary;
+    ctx.shadowBlur = 25;
   }
 
-  // Main fuselage (jet body) - solid bright colors
+  // Nose cone (red pointed tip)
+  ctx.fillStyle = '#a23b3b';
+  ctx.beginPath();
+  ctx.moveTo(22, 0);
+  ctx.lineTo(14, -6);
+  ctx.lineTo(14, 6);
+  ctx.closePath();
+  ctx.fill();
+
+  // Main body (lime green rocket)
   ctx.fillStyle = primary;
   ctx.beginPath();
-  ctx.moveTo(24, 0); // nose
-  ctx.lineTo(8, -4);
-  ctx.lineTo(-14, -4);
-  ctx.lineTo(-14, -6);
-  ctx.lineTo(-16, -6);
-  ctx.lineTo(-16, 6);
-  ctx.lineTo(-14, 6);
-  ctx.lineTo(-14, 4);
-  ctx.lineTo(8, 4);
+  ctx.moveTo(14, -6);
+  ctx.lineTo(14, 6);
+  ctx.lineTo(-10, 6);
+  ctx.lineTo(-10, -6);
   ctx.closePath();
   ctx.fill();
-  
-  ctx.shadowBlur = 0;
 
-  // Main wings (large, swept back)
-  ctx.fillStyle = '#d0e0f8';
+  // Window/cockpit (blue-gray geometric)
+  ctx.fillStyle = '#5a7a8a';
   ctx.beginPath();
-  ctx.moveTo(6, -4);
-  ctx.lineTo(-4, -18);
+  ctx.moveTo(10, -4);
+  ctx.lineTo(6, -2);
+  ctx.lineTo(6, 2);
+  ctx.lineTo(10, 4);
+  ctx.closePath();
+  ctx.fill();
+
+  // Window highlight
+  ctx.fillStyle = '#7a9aaa';
+  ctx.beginPath();
+  ctx.moveTo(10, -3);
+  ctx.lineTo(7, -1);
+  ctx.lineTo(7, 1);
+  ctx.lineTo(10, 3);
+  ctx.closePath();
+  ctx.fill();
+
+  // Side wings (red swept back)
+  ctx.fillStyle = '#a23b3b';
+  // Left wing
+  ctx.beginPath();
+  ctx.moveTo(2, -6);
+  ctx.lineTo(2, -14);
+  ctx.lineTo(-8, -14);
+  ctx.lineTo(-8, -6);
+  ctx.closePath();
+  ctx.fill();
+  // Right wing
+  ctx.beginPath();
+  ctx.moveTo(2, 6);
+  ctx.lineTo(2, 14);
+  ctx.lineTo(-8, 14);
+  ctx.lineTo(-8, 6);
+  ctx.closePath();
+  ctx.fill();
+
+  // Wing details (green on wings)
+  ctx.fillStyle = primary;
+  ctx.fillRect(0, -12, 3, 5);
+  ctx.fillRect(0, 7, 3, 5);
+
+  // Side boosters (green cylinders)
+  ctx.fillStyle = primary;
+  ctx.fillRect(-10, -16, 4, 10);
+  ctx.fillRect(-10, 6, 4, 10);
+
+  // Booster tips (red)
+  ctx.fillStyle = '#a23b3b';
+  ctx.beginPath();
+  ctx.moveTo(-10, -16);
   ctx.lineTo(-8, -18);
-  ctx.lineTo(-10, -8);
-  ctx.lineTo(2, -4);
+  ctx.lineTo(-6, -16);
   ctx.closePath();
   ctx.fill();
-  
   ctx.beginPath();
-  ctx.moveTo(6, 4);
-  ctx.lineTo(-4, 18);
+  ctx.moveTo(-10, 16);
   ctx.lineTo(-8, 18);
-  ctx.lineTo(-10, 8);
-  ctx.lineTo(2, 4);
+  ctx.lineTo(-6, 16);
   ctx.closePath();
   ctx.fill();
 
-  // Wing accents (highlight)
-  ctx.fillStyle = '#ffffff';
-  ctx.beginPath();
-  ctx.moveTo(4, -4);
-  ctx.lineTo(-2, -14);
-  ctx.lineTo(-6, -14);
-  ctx.lineTo(-4, -6);
-  ctx.closePath();
-  ctx.fill();
-  
-  ctx.beginPath();
-  ctx.moveTo(4, 4);
-  ctx.lineTo(-2, 14);
-  ctx.lineTo(-6, 14);
-  ctx.lineTo(-4, 6);
-  ctx.closePath();
-  ctx.fill();
+  // Booster stripes (red bands)
+  ctx.fillStyle = '#8b2f2f';
+  ctx.fillRect(-10, -8, 4, 2);
+  ctx.fillRect(-10, 14, 4, 2);
 
-  // Cockpit canopy (solid bright cyan)
-  ctx.fillStyle = '#88ddff';
-  ctx.beginPath();
-  ctx.ellipse(12, 0, 6, 3, 0, 0, Math.PI * 2);
-  ctx.fill();
+  // Engine base (red block)
+  ctx.fillStyle = '#a23b3b';
+  ctx.fillRect(-16, -6, 6, 12);
 
-  // Cockpit highlight (solid white)
-  ctx.fillStyle = '#ffffff';
-  ctx.beginPath();
-  ctx.ellipse(14, -1, 3, 1.5, 0, 0, Math.PI * 2);
-  ctx.fill();
+  // Engine nozzles (dark)
+  ctx.fillStyle = '#3a1f1f';
+  ctx.fillRect(-16, -4, 2, 3);
+  ctx.fillRect(-16, 1, 2, 3);
 
-  // Engine intakes (dark)
-  ctx.fillStyle = '#304060';
-  ctx.fillRect(-16, -6, 2, 2);
-  ctx.fillRect(-16, 4, 2, 2);
-  
-  // wing detail lights (bright cyan with glow)
-  ctx.fillStyle = '#00ffff';
-  ctx.shadowColor = '#00ffff';
-  ctx.shadowBlur = 8;
-  ctx.fillRect(-3, -9, 4, 2);
-  ctx.fillRect(-3, 7, 4, 2);
   ctx.shadowBlur = 0;
 
-  // engine glow (bright blue with stronger glow)
-  ctx.fillStyle = '#5090ff';
-  ctx.shadowColor = '#4080ff';
-  ctx.shadowBlur = 12;
-  ctx.fillRect(-18, -3, 3, 6);
-  ctx.shadowBlur = 0;
-
-  // Outline for definition (solid white, thick)
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 3;
+  // Outline (dark for definition)
+  ctx.strokeStyle = '#2a2a2a';
+  ctx.lineWidth = 1.5;
   ctx.beginPath();
-  ctx.moveTo(24, 0);
-  ctx.lineTo(8, -4);
-  ctx.lineTo(6, -4);
-  ctx.lineTo(-4, -18);
-  ctx.lineTo(-8, -18);
-  ctx.lineTo(-10, -8);
-  ctx.lineTo(-14, -6);
-  ctx.lineTo(-16, -6);
-  ctx.lineTo(-16, 6);
-  ctx.lineTo(-14, 6);
-  ctx.lineTo(-10, 8);
-  ctx.lineTo(-8, 18);
-  ctx.lineTo(-4, 18);
-  ctx.lineTo(6, 4);
-  ctx.lineTo(8, 4);
-  ctx.closePath();
-  ctx.stroke();
-
-  // Nose highlight (extra thick)
-  ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.moveTo(24, 0);
-  ctx.lineTo(20, 0);
+  ctx.moveTo(22, 0);
+  ctx.lineTo(14, -6);
+  ctx.lineTo(2, -6);
+  ctx.lineTo(2, -14);
+  ctx.lineTo(-8, -14);
+  ctx.lineTo(-8, -6);
+  ctx.lineTo(-10, -6);
+  ctx.lineTo(-10, -16);
+  ctx.lineTo(-6, -16);
+  ctx.lineTo(-10, 6);
+  ctx.lineTo(-10, 16);
+  ctx.lineTo(-6, 16);
+  ctx.lineTo(-10, 6);
+  ctx.lineTo(-8, 6);
+  ctx.lineTo(-8, 14);
+  ctx.lineTo(2, 14);
+  ctx.lineTo(2, 6);
+  ctx.lineTo(14, 6);
   ctx.stroke();
 
   ctx.restore();
@@ -1811,7 +1808,7 @@ function render() {
   ctx.save();
   // draw my ship at center with custom color
   const meData = players.get(myId);
-  const myColor = (meData && meData.shipColor) || '#ffffff';
+  const myColor = (meData && meData.shipColor) || '#00ff00';
   drawShip(width/2, height/2, me.angle, { primary: myColor, accent: '#cfe7ff', thrusting: thrust });
 
   // sonar rings then reveals
