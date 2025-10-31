@@ -49,7 +49,7 @@ const SKILL_COSTS = { speedBoost: [50, 100, 150], shield: [50, 100, 150], rapidF
 const WEAPON_COSTS = { cannon: [100, 200, 300], torpedo: [150, 300, 500], missile: [200, 400, 700] };
 const ELECTRONICS_COSTS = { radar: [120, 250, 400], sonar: [100, 200, 350], targeting: [180, 350, 600] };
 const KILL_REWARD = 75; // credits per kill
-const SHIP_COLORS = ['#ffffff', '#ff6b9d', '#c9a0dc', '#ffd700', '#00ffff', '#ff8c00', '#7fffd4', '#ff69b4'];
+const SHIP_COLORS = ['#00ff00', '#ff6b9d', '#c9a0dc', '#ffd700', '#00ffff', '#ff8c00', '#7fffd4', '#ff69b4'];
 const STREAK_BONUSES = [0, 50, 100, 200, 400, 800]; // bonus credits for streaks
 const TORPEDO_COOLDOWN = 3000; // ms
 const MISSILE_COOLDOWN = 5000; // ms
@@ -83,10 +83,9 @@ const MISSILE_DAMAGE = 50;
  *  shipColor: string,
  *  killStreak: number,
  *  bestStreak: number,
- *  totalKills: number,
+ *  totalTills: number,
  *  totalScore: number,
- *  weapons: {cannon: number, torpedo: number, missile: number},
- *  electronics: {radar: number, sonar: number, targeting: number}
+ *  weapons: {cannon: number, torpedo: number, missile: number}
  * }} Player
  */
 
@@ -162,8 +161,7 @@ function createPlayer(id, name, isBot = false, persistentData = {}) {
     bestStreak: persistentData.bestStreak || 0,
     totalKills: persistentData.totalKills || 0,
     totalScore: persistentData.totalScore || 0,
-    weapons: { cannon: 1, torpedo: 0, missile: 0 }, // always reset
-    electronics: { radar: 0, sonar: 1, targeting: 0 } // always reset
+    weapons: { cannon: 1, torpedo: 0, missile: 0 } // always reset
   };
 }
 
@@ -191,16 +189,6 @@ function spawnBot() {
   }
   bot.weapons.cannon = 1 + Math.floor(Math.random() * 3); // 1-3
   
-  // give bots random electronics
-  if (Math.random() > 0.4) {
-    bot.electronics.radar = 1 + Math.floor(Math.random() * 3);
-  }
-  if (Math.random() > 0.5) {
-    bot.electronics.sonar = 1 + Math.floor(Math.random() * 3);
-  }
-  if (Math.random() > 0.6) {
-    bot.electronics.targeting = 1 + Math.floor(Math.random() * 3);
-  }
   
   // random ship color
   bot.shipColor = SHIP_COLORS[Math.floor(Math.random() * SHIP_COLORS.length)];
@@ -365,32 +353,8 @@ io.on('connection', socket => {
       p.angle = fireAngle; // instantly rotate ship to fire angle
     }
     
-    // auto-targeting: find nearest visible enemy in direction
+    // no auto-targeting (electronics removed)
     let targetId = null;
-    
-    if (p.electronics.targeting > 0) {
-      let nearestTarget = null;
-      let minDist = Infinity;
-      const maxTargetDist = 800 + (p.electronics.targeting * 200);
-      
-      for (const other of players.values()) {
-        if (other.id === p.id || other.hp <= 0) continue;
-        const dist = Math.hypot(other.x - p.x, other.y - p.y);
-        if (dist > maxTargetDist) continue;
-        
-        const angleToTarget = Math.atan2(other.y - p.y, other.x - p.x);
-        let angleDiff = angleToTarget - fireAngle;
-        while (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
-        while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
-        
-        const coneAngle = Math.PI / 4; // 45 degree cone
-        if (Math.abs(angleDiff) < coneAngle && dist < minDist) {
-          minDist = dist;
-          nearestTarget = other;
-          targetId = other.id;
-        }
-      }
-    }
     
     const bulletVx = Math.cos(fireAngle) * BULLET_SPEED;
     const bulletVy = Math.sin(fireAngle) * BULLET_SPEED;
@@ -448,20 +412,6 @@ io.on('connection', socket => {
     }
   });
   
-  socket.on('upgradeElectronics', (electronicsName) => {
-    const p = players.get(socket.id);
-    if (!p) return;
-    if (electronicsName === 'radar' || electronicsName === 'sonar' || electronicsName === 'targeting') {
-      const currentLevel = p.electronics[electronicsName];
-      if (currentLevel < 3) {
-        const cost = ELECTRONICS_COSTS[electronicsName][currentLevel];
-        if (p.credits >= cost) {
-          p.credits -= cost;
-          p.electronics[electronicsName]++;
-        }
-      }
-    }
-  });
   
   socket.on('fireTorpedo', (data) => {
     const p = players.get(socket.id);
@@ -568,7 +518,7 @@ setInterval(() => {
             bot.thrust = dist > 200; // maintain distance
             
             // fire when aimed
-            const aimThreshold = bot.electronics.targeting > 0 ? 0.5 : 0.3;
+            const aimThreshold = 0.3;
             if (Math.abs(angleDiff) < aimThreshold && dist < 700) {
               // use best available weapon
               if (bot.weapons.missile > 0 && dist > 400 && now - bot.lastMissileAt >= MISSILE_COOLDOWN) {
@@ -598,27 +548,8 @@ setInterval(() => {
                   type: 'torpedo'
                 });
               } else if (now - bot.lastFireAt >= FIRE_COOLDOWN_MS * (1 - bot.skills.rapidFire * 0.15)) {
-                // cannon fire with targeting
+                // cannon fire (no targeting for bots)
                 bot.lastFireAt = now;
-                
-                let targetId = null;
-                if (bot.electronics.targeting > 0) {
-                  const maxTargetDist = 800 + (bot.electronics.targeting * 200);
-                  for (const other of players.values()) {
-                    if (other.id === bot.id || other.hp <= 0) continue;
-                    const targetDist = Math.hypot(other.x - bot.x, other.y - bot.y);
-                    if (targetDist < maxTargetDist) {
-                      const angleToTarget = Math.atan2(other.y - bot.y, other.x - bot.x);
-                      let diff = angleToTarget - bot.angle;
-                      while (diff > Math.PI) diff -= Math.PI * 2;
-                      while (diff < -Math.PI) diff += Math.PI * 2;
-                      if (Math.abs(diff) < Math.PI / 4) {
-                        targetId = other.id;
-                        break;
-                      }
-                    }
-                  }
-                }
                 
                 const bulletVx = Math.cos(bot.angle) * BULLET_SPEED;
                 const bulletVy = Math.sin(bot.angle) * BULLET_SPEED;
@@ -634,7 +565,7 @@ setInterval(() => {
                   createdAt: now,
                   startX: startX,
                   startY: startY,
-                  targetId: targetId
+                  targetId: null
                 });
               }
             }
@@ -845,8 +776,7 @@ setInterval(() => {
       const distSq = distanceSq(proj.x, proj.y, p.x, p.y);
       if (distSq < hitDist * hitDist) {
         const damage = proj.type === 'torpedo' ? TORPEDO_DAMAGE : MISSILE_DAMAGE;
-        const shieldMultiplier = 1 - (p.electronics.radar * 0.1); // radar helps avoid
-        p.hp = Math.max(0, p.hp - damage * shieldMultiplier);
+        p.hp = Math.max(0, p.hp - damage);
         projectilesToRemove.add(proj.id);
         
         if (p.hp <= 0) {
@@ -958,7 +888,6 @@ setInterval(() => {
       if (!p.isBot) {
         p.skills = { speedBoost: 0, shield: 0, rapidFire: 0 };
         p.weapons = { cannon: 1, torpedo: 0, missile: 0 };
-        p.electronics = { radar: 0, sonar: 1, targeting: 0 };
         p.credits = 0; // lose all credits
         p.level = 1; // reset level
         p.xp = 0; // reset XP
@@ -1016,8 +945,7 @@ setInterval(() => {
       shipColor: p.shipColor,
       killStreak: p.killStreak,
       bestStreak: p.bestStreak,
-      weapons: p.weapons,
-      electronics: p.electronics
+      weapons: p.weapons
     })),
     pulses: pulses,
     bullets: bullets.map(b => ({ id: b.id, x: b.x, y: b.y })),
